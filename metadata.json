@@ -1,0 +1,6 @@
+{
+  "name": "Bewakoof AI",
+  "description": "Production-ready, local-first voice personal AI agent with zero-cost architecture, task engine, and defense-in-depth security.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
