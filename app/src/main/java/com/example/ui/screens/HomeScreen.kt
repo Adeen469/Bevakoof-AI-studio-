@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -20,13 +21,18 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PhoneInTalk
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SettingsVoice
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -34,9 +40,12 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -73,6 +82,7 @@ fun HomeScreen(
     val profile by viewModel.userProfile.collectAsState()
     val agentReply by viewModel.agentReplyText.collectAsState()
     val taskStatus by viewModel.taskStatus.collectAsState()
+    val isBgWakeActive by viewModel.isBackgroundWakeRunning.collectAsState()
 
     var textInput by remember { mutableStateOf("") }
 
@@ -125,7 +135,97 @@ fun HomeScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Background Voice Wake (Always-On Listener) Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isBgWakeActive) IndigoNeon.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = if (isBgWakeActive) EmeraldSafe else CyanNeon,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Background Voice Wake",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = if (isBgWakeActive) EmeraldSafe.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isBgWakeActive) "ACTIVE" else "OFF",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isBgWakeActive) EmeraldSafe else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = if (isBgWakeActive) "Listening for 'Bewakoof' even when app is closed." else "Enable to wake without opening app.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = isBgWakeActive,
+                        onCheckedChange = { viewModel.toggleBackgroundWake(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = EmeraldSafe,
+                            checkedTrackColor = EmeraldSafe.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.testTag("bg_wake_switch")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Or set as phone's Default Assistant:",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    OutlinedButton(
+                        onClick = { viewModel.openDefaultAssistantSettings() },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("open_assistant_settings_btn")
+                    ) {
+                        Icon(Icons.Default.SettingsVoice, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("System Assistant Setup", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Audio Route & Earpiece Switch
         Row(
@@ -142,7 +242,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Audio Route: $audioRoute",
+                    text = "Audio: $audioRoute",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -156,7 +256,7 @@ fun HomeScreen(
                 },
                 label = {
                     Text(
-                        if (profile?.earpieceModeEnabled == true) "Earpiece (Call Mode)" else "Normal Speaker",
+                        if (profile?.earpieceModeEnabled == true) "Earpiece Mode" else "Normal Speaker",
                         fontSize = 11.sp
                     )
                 },
@@ -164,7 +264,7 @@ fun HomeScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Center Voice Orb
         VoiceOrb(
@@ -178,10 +278,10 @@ fun HomeScreen(
         // State indicator text
         val stateLabel = when (voiceState) {
             AgentVoiceState.LISTENING -> "Listening to Malik..."
-            AgentVoiceState.PROCESSING -> "Planning & verifying..."
+            AgentVoiceState.PROCESSING -> "Planning & executing..."
             AgentVoiceState.SPEAKING -> "Responding..."
             AgentVoiceState.EMERGENCY_STOPPED -> "EMERGENCY HALTED"
-            else -> "Tap Orb to Speak"
+            else -> "Tap Orb or Say 'Bewakoof'"
         }
         Text(
             text = stateLabel,
@@ -190,28 +290,7 @@ fun HomeScreen(
             color = if (voiceState == AgentVoiceState.EMERGENCY_STOPPED) MaterialTheme.colorScheme.error else CyanNeon
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Wake Word Mode Selector
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Wake Word: ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("\"${profile?.wakeWord ?: "Bewakoof"}\"", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CyanNeon)
-            Spacer(modifier = Modifier.width(8.dp))
-            listOf("SESSION", "EVERY_COMMAND", "PERSISTENT").forEach { mode ->
-                FilterChip(
-                    selected = (profile?.wakeWordMode ?: "SESSION") == mode,
-                    onClick = { viewModel.setWakeWordMode(mode) },
-                    label = { Text(mode.replace("_", " "), fontSize = 10.sp) },
-                    modifier = Modifier.padding(horizontal = 2.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Live Agent Response Speech Box
         Card(
@@ -223,7 +302,7 @@ fun HomeScreen(
             ),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -240,11 +319,11 @@ fun HomeScreen(
                         letterSpacing = 1.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = agentReply,
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -253,7 +332,7 @@ fun HomeScreen(
         // Active Task Progress Status (if running)
         if (taskStatus is TaskExecutionStatus.InProgress) {
             val inProgress = taskStatus as TaskExecutionStatus.InProgress
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -275,12 +354,12 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Quick Suggestion Chips (Fewest clicks for the user!)
         Text(
-            text = "QUICK GOALS",
-            fontSize = 11.sp,
+            text = "REAL DEVICE CAPABILITIES (VOICE OR TAP)",
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.Start),
@@ -296,6 +375,31 @@ fun HomeScreen(
         ) {
             FilterChip(
                 selected = false,
+                onClick = { viewModel.executeGoal("Turn torch on") },
+                label = { Text("🔦 Torch ON") }
+            )
+            FilterChip(
+                selected = false,
+                onClick = { viewModel.executeGoal("Turn torch off") },
+                label = { Text("🔦 Torch OFF") }
+            )
+            FilterChip(
+                selected = false,
+                onClick = { viewModel.executeGoal("Increase volume") },
+                label = { Text("🔊 Volume Up") }
+            )
+            FilterChip(
+                selected = false,
+                onClick = { viewModel.executeGoal("Set timer 5 minutes") },
+                label = { Text("⏳ 5 Min Timer") }
+            )
+            FilterChip(
+                selected = false,
+                onClick = { viewModel.executeGoal("Set alarm for 7 am") },
+                label = { Text("⏰ Alarm 7:00 AM") }
+            )
+            FilterChip(
+                selected = false,
                 onClick = { viewModel.executeGoal("Check phone battery and storage") },
                 label = { Text("🔋 Battery & Storage") }
             )
@@ -306,8 +410,13 @@ fun HomeScreen(
             )
             FilterChip(
                 selected = false,
-                onClick = { viewModel.executeGoal("Open Settings") },
-                label = { Text("⚙️ Open Settings") }
+                onClick = { viewModel.executeGoal("Open wifi settings") },
+                label = { Text("📶 Wi-Fi Settings") }
+            )
+            FilterChip(
+                selected = false,
+                onClick = { viewModel.executeGoal("What is quantum computing and how does it work?") },
+                label = { Text("🤖 Ask Gemini AI") }
             )
             FilterChip(
                 selected = false,
@@ -318,16 +427,11 @@ fun HomeScreen(
                     labelColor = MaterialTheme.colorScheme.error
                 )
             )
-            FilterChip(
-                selected = false,
-                onClick = { viewModel.executeGoal("List sandbox files") },
-                label = { Text("📁 Sandbox Files") }
-            )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Bottom Command Input Bar (Keyboard & Send)
+        // Bottom Command Input Bar (Voice or Text Prompt)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -335,7 +439,7 @@ fun HomeScreen(
             OutlinedTextField(
                 value = textInput,
                 onValueChange = { textInput = it },
-                placeholder = { Text("Type goal e.g. Open Camera...", fontSize = 14.sp) },
+                placeholder = { Text("Voice or text prompt e.g. 'Torch on'...", fontSize = 13.sp) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = {

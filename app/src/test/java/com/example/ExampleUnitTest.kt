@@ -119,5 +119,20 @@ class ExampleUnitTest {
         val camera = router.parseIntentLocally("Open camera please")
         assertEquals("AppLauncherTool", camera.toolName)
         assertEquals("camera", camera.toolArguments["appName"])
+
+        val torch = router.parseIntentLocally("Torch on karo")
+        assertEquals("TorchTool", torch.toolName)
+        assertEquals("on", torch.toolArguments["action"])
+
+        val volume = router.parseIntentLocally("Volume badhao")
+        assertEquals("VolumeControlTool", volume.toolName)
+        assertEquals("up", volume.toolArguments["action"])
+
+        val timer = router.parseIntentLocally("Timer 5 minute ka lagao")
+        assertEquals("AlarmTimerTool", timer.toolName)
+        assertEquals("timer", timer.toolArguments["type"])
+
+        val reasoning = router.parseIntentLocally("Explain how machine learning neural networks work")
+        assertEquals("GeneralKnowledgeAiTool", reasoning.toolName)
     }
 }

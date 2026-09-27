@@ -81,14 +81,21 @@ fun BewakoofApp(
     val showConfirmPrompt by viewModel.showConfirmationDialog.collectAsState()
     val confirmPromptMsg by viewModel.confirmationPrompt.collectAsState()
 
-    // Request audio permission for microphone
+    // Request necessary runtime permissions
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { _ -> }
 
     LaunchedEffect(Unit) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        val permissionsToRequest = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val missing = permissionsToRequest.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         }
     }
 

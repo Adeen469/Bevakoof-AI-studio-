@@ -1,11 +1,18 @@
 package com.example.agent
 
+import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.provider.AlarmClock
+import android.provider.Settings
+import com.example.ai.GeminiClient
 import com.example.security.RiskLevel
 import java.io.File
 
@@ -45,37 +52,51 @@ class AppLauncherTool : AgentTool {
         "chrome" to "com.android.chrome",
         "maps" to "com.google.android.apps.maps",
         "youtube" to "com.google.android.youtube",
-        "whatsapp" to "com.whatsapp"
+        "whatsapp" to "com.whatsapp",
+        "gallery" to "com.google.android.apps.photos",
+        "photos" to "com.google.android.apps.photos",
+        "calendar" to "com.google.android.calendar",
+        "contacts" to "com.google.android.contacts",
+        "gmail" to "com.google.android.gm"
     )
 
     override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
         val appQuery = arguments["appName"]?.lowercase()?.trim() ?: return ToolExecutionResult.Failure("App name is required")
         val pm = context.packageManager
 
-        // Check if query is alias
+        // 1. Direct alias check
         var pkg = commonPackageMap[appQuery]
-        if (pkg == null) {
-            // Search installed applications for matching label
-            val apps = pm.getInstalledApplications(0)
-            val matched = apps.firstOrNull {
-                it.packageName.contains(appQuery, ignoreCase = true) ||
-                        pm.getApplicationLabel(it).toString().contains(appQuery, ignoreCase = true)
-            }
-            pkg = matched?.packageName
-        }
-
         if (pkg != null) {
             val launchIntent = pm.getLaunchIntentForPackage(pkg)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
-                return ToolExecutionResult.Success("App $appQuery ($pkg) launched successfully")
+                return ToolExecutionResult.Success("Launched $appQuery ($pkg)")
             }
         }
 
-        // Fallback for settings or web
+        // 2. Query all installed apps with a Launcher Intent
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+        val matched = resolveInfos.firstOrNull { ri ->
+            val label = ri.loadLabel(pm).toString().lowercase()
+            label.contains(appQuery) || ri.activityInfo.packageName.contains(appQuery)
+        }
+
+        if (matched != null) {
+            val launchIntent = pm.getLaunchIntentForPackage(matched.activityInfo.packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+                return ToolExecutionResult.Success("Launched ${matched.loadLabel(pm)} successfully")
+            }
+        }
+
+        // 3. Fallback for settings
         if (appQuery.contains("setting")) {
-            val settingsIntent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+            val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(settingsIntent)
@@ -85,9 +106,169 @@ class AppLauncherTool : AgentTool {
         return ToolExecutionResult.Failure("Could not find installed application matching '$appQuery'")
     }
 
-    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean {
-        return true
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
+}
+
+class TorchTool : AgentTool {
+    override val name = "TorchTool"
+    override val displayName = "Flashlight / Torch"
+    override val riskLevel = RiskLevel.L0_SAFE
+    override val requiresAuthentication = false
+    override val requiresConfirmation = false
+    override val description = "Turns device flashlight/torch on or off"
+
+    override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
+        val action = arguments["action"]?.lowercase() ?: "on"
+        val enable = action != "off" && action != "band"
+
+        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+            ?: return ToolExecutionResult.Failure("Camera service unavailable")
+
+        return try {
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: "0"
+
+            cameraManager.setTorchMode(cameraId, enable)
+            ToolExecutionResult.Success("Flashlight turned ${if (enable) "ON" else "OFF"}")
+        } catch (e: Exception) {
+            ToolExecutionResult.Failure("Unable to control flashlight: ${e.message}")
+        }
     }
+
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
+}
+
+class VolumeControlTool : AgentTool {
+    override val name = "VolumeControlTool"
+    override val displayName = "Volume & Sound Control"
+    override val riskLevel = RiskLevel.L0_SAFE
+    override val requiresAuthentication = false
+    override val requiresConfirmation = false
+    override val description = "Adjusts media or ringer volume or sets silent/vibrate mode"
+
+    override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return ToolExecutionResult.Failure("Audio service not available")
+
+        val action = arguments["action"]?.lowercase() ?: "up"
+
+        return try {
+            when (action) {
+                "up", "increase" -> {
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+                    ToolExecutionResult.Success("Volume increased")
+                }
+                "down", "decrease" -> {
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+                    ToolExecutionResult.Success("Volume decreased")
+                }
+                "mute" -> {
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
+                    ToolExecutionResult.Success("Media volume muted")
+                }
+                "unmute" -> {
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
+                    ToolExecutionResult.Success("Media volume unmuted")
+                }
+                "vibrate" -> {
+                    audioManager.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+                    ToolExecutionResult.Success("Ringer mode set to Vibrate")
+                }
+                "normal" -> {
+                    audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                    ToolExecutionResult.Success("Ringer mode set to Normal")
+                }
+                else -> ToolExecutionResult.Failure("Unknown volume action: $action")
+            }
+        } catch (e: Exception) {
+            ToolExecutionResult.Failure("Volume adjustment failed: ${e.message}")
+        }
+    }
+
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
+}
+
+class AlarmTimerTool : AgentTool {
+    override val name = "AlarmTimerTool"
+    override val displayName = "Alarm & Timer"
+    override val riskLevel = RiskLevel.L1_CONFIRMATION
+    override val requiresAuthentication = false
+    override val requiresConfirmation = false
+    override val description = "Sets device system alarm or countdown timer"
+
+    override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
+        val type = arguments["type"]?.lowercase() ?: "alarm"
+        val message = arguments["message"] ?: "Bewakoof Reminder"
+
+        return try {
+            if (type == "timer") {
+                val seconds = arguments["seconds"]?.toIntOrNull() ?: 300 // default 5 mins
+                val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                    putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                    putExtra(AlarmClock.EXTRA_MESSAGE, message)
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ToolExecutionResult.Success("Timer set for ${seconds / 60} minute(s)")
+            } else {
+                val hour = arguments["hour"]?.toIntOrNull() ?: 7
+                val minutes = arguments["minutes"]?.toIntOrNull() ?: 0
+                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                    putExtra(AlarmClock.EXTRA_HOUR, hour)
+                    putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                    putExtra(AlarmClock.EXTRA_MESSAGE, message)
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                val amPm = if (hour >= 12) "PM" else "AM"
+                val displayHour = if (hour % 12 == 0) 12 else hour % 12
+                ToolExecutionResult.Success("Alarm set for %d:%02d %s".format(displayHour, minutes, amPm))
+            }
+        } catch (e: Exception) {
+            ToolExecutionResult.Failure("Alarm/Timer setup error: ${e.message}")
+        }
+    }
+
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
+}
+
+class DeviceSettingsTool : AgentTool {
+    override val name = "DeviceSettingsTool"
+    override val displayName = "System Settings Navigator"
+    override val riskLevel = RiskLevel.L0_SAFE
+    override val requiresAuthentication = false
+    override val requiresConfirmation = false
+    override val description = "Navigates directly to Android system settings panels"
+
+    override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
+        val target = arguments["target"]?.lowercase() ?: "all"
+
+        val action = when (target) {
+            "wifi", "internet" -> Settings.ACTION_WIFI_SETTINGS
+            "bluetooth", "bt" -> Settings.ACTION_BLUETOOTH_SETTINGS
+            "display", "brightness" -> Settings.ACTION_DISPLAY_SETTINGS
+            "sound", "volume" -> Settings.ACTION_SOUND_SETTINGS
+            "battery" -> Intent.ACTION_POWER_USAGE_SUMMARY
+            "assist", "assistant" -> Settings.ACTION_VOICE_INPUT_SETTINGS
+            "apps" -> Settings.ACTION_APPLICATION_SETTINGS
+            else -> Settings.ACTION_SETTINGS
+        }
+
+        return try {
+            val intent = Intent(action).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult.Success("Opened $target settings panel")
+        } catch (e: Exception) {
+            ToolExecutionResult.Failure("Could not open settings: ${e.message}")
+        }
+    }
+
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
 }
 
 class SystemTelemetryTool : AgentTool {
@@ -132,7 +313,7 @@ class FileSandboxTool : AgentTool {
 
     override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
         val action = arguments["action"]?.lowercase() ?: "list"
-        val fileName = arguments["fileName"]?.trim() ?: "note.txt"
+        val fileName = arguments["fileName"]?.trim() ?: "notes.txt"
         val content = arguments["content"] ?: ""
 
         // Defense in depth: Check for path traversal attacks
@@ -251,13 +432,45 @@ class WebSearchAgentTool : AgentTool {
     override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
 }
 
+class GeneralKnowledgeAiTool : AgentTool {
+    override val name = "GeneralKnowledgeAiTool"
+    override val displayName = "Gemini Reasoning & Knowledge"
+    override val riskLevel = RiskLevel.L0_SAFE
+    override val requiresAuthentication = false
+    override val requiresConfirmation = false
+    override val description = "Answers open-ended knowledge, drafting, or complex reasoning questions using Gemini 3.5 Flash or local fallback"
+
+    override suspend fun execute(context: Context, arguments: Map<String, String>): ToolExecutionResult {
+        val prompt = arguments["prompt"]?.trim() ?: return ToolExecutionResult.Failure("Prompt is required")
+
+        // Try real Gemini API if configured
+        val geminiResult = GeminiClient.generateContent(prompt)
+        return geminiResult.fold(
+            onSuccess = { answer ->
+                ToolExecutionResult.Success(answer)
+            },
+            onFailure = {
+                // Graceful local edge response
+                ToolExecutionResult.Success("Ji Malik: $prompt ke baare me local agent taiyar hai. Hardware aur task actions offline chal rahe hain.")
+            }
+        )
+    }
+
+    override suspend fun verify(context: Context, arguments: Map<String, String>): Boolean = true
+}
+
 class ToolRegistry {
     val tools: Map<String, AgentTool> = listOf(
         AppLauncherTool(),
+        TorchTool(),
+        VolumeControlTool(),
+        AlarmTimerTool(),
+        DeviceSettingsTool(),
         SystemTelemetryTool(),
         FileSandboxTool(),
         CommunicationHelperTool(),
-        WebSearchAgentTool()
+        WebSearchAgentTool(),
+        GeneralKnowledgeAiTool()
     ).associateBy { it.name }
 
     fun getTool(name: String): AgentTool? = tools[name]

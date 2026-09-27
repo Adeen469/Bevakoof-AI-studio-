@@ -1,6 +1,8 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Intent
+import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agent.AiRouter
@@ -18,6 +20,7 @@ import com.example.data.model.UserProfile
 import com.example.data.model.VaultCredential
 import com.example.data.repository.BewakoofRepository
 import com.example.security.SecurityEngine
+import com.example.service.BewakoofWakeService
 import com.example.voice.AgentVoiceState
 import com.example.voice.VoiceAcousticStats
 import com.example.voice.VoiceDspEngine
@@ -376,6 +379,29 @@ class BewakoofViewModel(application: Application) : AndroidViewModel(application
     fun setDefaultProvider(providerId: String) {
         viewModelScope.launch {
             repository.setDefaultProvider(providerId)
+        }
+    }
+
+    val isBackgroundWakeRunning: StateFlow<Boolean> = BewakoofWakeService.isServiceRunning
+
+    fun toggleBackgroundWake(enabled: Boolean) {
+        if (enabled) {
+            BewakoofWakeService.startService(getApplication())
+            _statusBannerMessage.value = "Background Voice Guard started. Bewakoof will wake on voice even when app is closed."
+        } else {
+            BewakoofWakeService.stopService(getApplication())
+            _statusBannerMessage.value = "Background Voice Guard stopped."
+        }
+    }
+
+    fun openDefaultAssistantSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            getApplication<Application>().startActivity(intent)
+        } catch (e: Exception) {
+            _statusBannerMessage.value = "Could not open settings: ${e.message}"
         }
     }
 
